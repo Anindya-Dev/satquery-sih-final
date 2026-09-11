@@ -2,6 +2,7 @@ import numpy as np
 
 from vision_pipeline.adapters import (
     bitemporal_array_to_imagery,
+    bitemporal_optical_array_to_imagery,
     optical_sar_pair_to_imagery,
 )
 from vision_pipeline.evidence.evidence_generator import generate_evidence
@@ -57,3 +58,31 @@ def test_fusion_tile_validation_raw_db():
     results = evidence[0]["results"]
     assert bool(results["water_mask"][10, 10])
     assert bool(results["built_up_mask"][20, 20])
+
+
+def test_change_tile_validation():
+    data = np.zeros((4, 120, 120), dtype=np.float32)
+    data[0] = 0.8  # NIR_t1
+    data[1] = 0.2  # RED_t1
+    data[2] = 0.8  # NIR_t2 (baseline)
+    data[3] = 0.2  # RED_t2 (baseline)
+    data[2, 40:80, 40:80] = 0.28  # simulated NIR drop in change zone
+    data[3, 40:80, 40:80] = 0.26  # simulated RED rise in change zone
+
+    imagery = bitemporal_optical_array_to_imagery(data)
+    task_spec = {
+        "primary_tool": "bitemporal_change_detector",
+        "evidence_requested": ["change_mask", "changed_area_km2", "confidence_mean"],
+    }
+
+    evidence = generate_evidence(task_spec, imagery)
+
+    assert len(evidence) == 1
+    results = evidence[0]["results"]
+    mask = results["change_mask"]
+
+    assert mask.dtype == np.bool_
+    assert mask[40:80, 40:80].all()
+    assert int(mask.sum()) == 1600
+    assert abs(results["changed_area_km2"] - 0.16) < 1e-6
+    assert abs(results["confidence_mean"] - (1600 / 14400)) < 1e-6
