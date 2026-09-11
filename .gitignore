@@ -9,6 +9,8 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+.commandcode/
+context.md
 
 # Data / Weights / Cache
 *.pt

@@ -1,2 +1,23 @@
-/* index css placeholder */
-body { font-family: Arial, sans-serif; }
+@import "leaflet/dist/leaflet.css";
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, html, #root {
+  height: 100%;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f8f9fa;
+  overflow: hidden;
+}
+
+/* Fix Leaflet tile positioning and controls alignment */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
