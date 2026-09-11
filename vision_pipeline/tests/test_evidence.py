@@ -146,6 +146,25 @@ def test_grounding_rs_specialist_vegetation():
     assert boxes[0]["y_min"] == 1
 
 
+def test_grounding_rs_specialist_built_up():
+    vv = np.full((3, 3), -20.0, dtype=np.float32)
+    vv[1, 1] = -5.0
+
+    task_spec = {
+        "primary_tool": "grounding_rs_specialist",
+        "parameters": {"grounding_target": "built_up"},
+    }
+    imagery = {"sar": {"VV": vv}}
+
+    evidence = generate_evidence(task_spec, imagery)
+
+    assert len(evidence) == 1
+    boxes = evidence[0]["results"]["bounding_boxes"]
+    assert len(boxes) == 1
+    assert boxes[0]["x_min"] == 1
+    assert boxes[0]["y_min"] == 1
+
+
 def test_unknown_tool_returns_empty():
     task_spec = {"primary_tool": "nonsense"}
     assert generate_evidence(task_spec, {}) == []

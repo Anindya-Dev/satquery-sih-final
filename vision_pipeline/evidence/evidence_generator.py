@@ -165,6 +165,10 @@ def _handle_grounding(task_spec, imagery):
         )
         mask = ndvi > VEGETATION_NDVI_THRESHOLD
         rule = f"NDVI > {VEGETATION_NDVI_THRESHOLD}"
+    elif target == "built_up":
+        vv_db = _band(imagery, "sar", "VV")
+        mask, _ = detect_built_up(vv_db)
+        rule = f"VV_dB >= {BUILT_UP_DB_THRESHOLD}"
     else:
         return []
 
