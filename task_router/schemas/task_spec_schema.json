@@ -1,6 +1,199 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "task_spec",
-  "type": "object",
-  "properties": {}
+  "$defs": {
+    "ModalityRequirement": {
+      "enum": [
+        "OPTICAL",
+        "SAR",
+        "CROSS_MODAL_PAIR",
+        "BITEMPORAL_PAIR"
+      ],
+      "title": "ModalityRequirement",
+      "type": "string"
+    },
+    "SensorType": {
+      "enum": [
+        "Sentinel-2",
+        "Sentinel-1",
+        "Cartosat-2S",
+        "RISAT",
+        "Generic"
+      ],
+      "title": "SensorType",
+      "type": "string"
+    },
+    "SpecialistTool": {
+      "enum": [
+        "optical_vqa_specialist",
+        "grounding_rs_specialist",
+        "captioning_rs_specialist",
+        "bitemporal_change_detector",
+        "bitemporal_change_vqa_specialist",
+        "optical_sar_fusion_specialist",
+        "sar_flood_extractor",
+        "spectral_indices_calculator"
+      ],
+      "title": "SpecialistTool",
+      "type": "string"
+    },
+    "TaskParameters": {
+      "properties": {
+        "target_features": {
+          "description": "Target objects or landcover types (e.g. ['water', 'built-up', 'vegetation', 'flood']).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Features",
+          "type": "array"
+        },
+        "bands_required": {
+          "description": "Specific spectral or SAR bands required by downstream dataloader (e.g. ['VV', 'VH'] or ['B04', 'B08']).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Bands Required",
+          "type": "array"
+        },
+        "indices_requested": {
+          "description": "Remote sensing indices to compute (e.g. ['NDVI', 'NDWI', 'NDBI']).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Indices Requested",
+          "type": "array"
+        },
+        "cloud_penetration_needed": {
+          "default": false,
+          "description": "Whether SAR is required due to cloud occlusion or night conditions.",
+          "title": "Cloud Penetration Needed",
+          "type": "boolean"
+        },
+        "temporal_comparison": {
+          "default": false,
+          "description": "True if query compares two points in time (bi-temporal change).",
+          "title": "Temporal Comparison",
+          "type": "boolean"
+        },
+        "threshold_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "otsu",
+          "description": "Thresholding algorithm for masks (e.g. 'otsu', 'fixed', 'adaptive').",
+          "title": "Threshold Method"
+        },
+        "grounding_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Text prompt if task involves locating/bounding specific regions.",
+          "title": "Grounding Prompt"
+        },
+        "vqa_question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Precise visual question to be answered by the specialist VQA model.",
+          "title": "Vqa Question"
+        }
+      },
+      "title": "TaskParameters",
+      "type": "object"
+    },
+    "TaskType": {
+      "enum": [
+        "single_image_vqa",
+        "single_image_grounding",
+        "single_image_captioning",
+        "bitemporal_change_detection",
+        "bitemporal_change_vqa",
+        "cross_modal_fusion",
+        "sar_flood_detection",
+        "vegetation_health_analysis",
+        "urban_builtup_mapping"
+      ],
+      "title": "TaskType",
+      "type": "string"
+    }
+  },
+  "description": "Root task specification output by Member 2's Router.\nGuarantees strict type safety and zero-hallucination downstream parameterization.",
+  "properties": {
+    "task_type": {
+      "$ref": "#/$defs/TaskType",
+      "description": "The primary remote-sensing task identified from the natural language query."
+    },
+    "modality": {
+      "$ref": "#/$defs/ModalityRequirement",
+      "description": "Required image input modality configuration."
+    },
+    "sensors": {
+      "description": "Sensors expected or recommended for the task.",
+      "items": {
+        "$ref": "#/$defs/SensorType"
+      },
+      "title": "Sensors",
+      "type": "array"
+    },
+    "primary_tool": {
+      "$ref": "#/$defs/SpecialistTool",
+      "description": "The primary specialist model or GIS tool from the registry to execute."
+    },
+    "secondary_tools": {
+      "description": "Optional auxiliary tools (e.g., indices calculator or cloud mask).",
+      "items": {
+        "$ref": "#/$defs/SpecialistTool"
+      },
+      "title": "Secondary Tools",
+      "type": "array"
+    },
+    "parameters": {
+      "$ref": "#/$defs/TaskParameters",
+      "description": "Algorithm and model parameters."
+    },
+    "evidence_requested": {
+      "description": "Visual and numerical evidence to extract (e.g. ['change_mask', 'confidence_score', 'area_km2']).",
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Requested",
+      "type": "array"
+    },
+    "confidence_threshold": {
+      "default": 0.75,
+      "description": "Minimum confidence score required for definitive assertions.",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence Threshold",
+      "type": "number"
+    },
+    "audit_summary": {
+      "description": "Auditable human-readable execution summary (task, selected tool, reasoning).",
+      "title": "Audit Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_type",
+    "modality",
+    "primary_tool",
+    "audit_summary"
+  ],
+  "title": "TaskSpec",
+  "type": "object"
 }
