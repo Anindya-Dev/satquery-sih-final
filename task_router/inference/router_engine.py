@@ -1,8 +1,7 @@
 """
-Inference Engine for SatQuery AI Task Router.
-Routes natural language queries to validated TaskSpec JSON schemas.
-Supports both fine-tuned model inference and a deterministic semantic engine
-to guarantee 100% reliable execution during CI/CD and offline development.
+Router engine implementation for SatQuery SIH pipeline.
+Routes natural language queries to validated TaskSpec schemas and dicts.
+Supports neural fine-tuned model inference and high-precision semantic parsing.
 """
 
 import os
@@ -30,7 +29,7 @@ from task_router.inference.prompt_templates import format_router_prompt
 class TaskRouterEngine:
     """
     Main Router Engine for SatQuery AI.
-    Translates user queries into validated TaskSpec instances for downstream pipelines.
+    Translates user queries into validated TaskSpec instances and dicts for downstream pipelines.
     """
 
     def __init__(self, model_path: Optional[str] = None, device: str = "cpu"):
@@ -78,7 +77,6 @@ class TaskRouterEngine:
         # 3. Clean and parse JSON from neural model
         parsed_dict = self._clean_and_parse_json(raw_json_str)
         if not parsed_dict:
-            # Fallback to semantic parser if model hallucinated invalid JSON
             task_dict = self._semantic_parse(query, input_metadata)
             return TaskSpec.model_validate(task_dict)
 
@@ -93,9 +91,15 @@ class TaskRouterEngine:
 
     def route_dict(self, query: str, input_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Routes a query and returns a raw dict with primitive types matching Member 3's GIS pipeline contract.
+        Routes a query and returns a raw dict with primitive types matching Member 3 & Member 4's contract.
         """
-        return self.route(query, input_metadata).model_dump(mode="json")
+        d = self.route(query, input_metadata).model_dump(mode="json")
+        # Ensure convenience top-level target is available for orchestrator
+        if "target" not in d:
+            targets = d.get("parameters", {}).get("target_features", [])
+            d["target"] = targets[0] if targets else "general"
+        d["query"] = query
+        return d
 
     def _generate_from_model(self, query: str, input_metadata: Optional[Dict[str, Any]]) -> Optional[str]:
         try:
@@ -135,8 +139,7 @@ class TaskRouterEngine:
 
     def _semantic_parse(self, query: str, input_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        High-precision semantic classifier aligned with the SIH problem statement.
-        Guarantees instant, zero-failure parameter extraction.
+        High-precision semantic classifier aligned with the SIH problem statement and Member 3/4 contracts.
         """
         q = query.lower()
 
@@ -152,10 +155,9 @@ class TaskRouterEngine:
             "deforestation between", "urban expansion between", "change detection",
             "two dates", "two acquisitions", "over time"
         ]
-        if has_bitemporal_meta or any(kw in q for kw in temporal_keywords):
+        if has_bitemporal_meta or any(kw in q for kw in temporal_keywords) or ("change" in q and "dates" in q):
             is_vqa = any(w in q for w in ["?", "has", "did", "how much", "was the", "increased, decreased"])
             task_type = TaskType.BITEMPORAL_CHANGE_VQA if is_vqa else TaskType.BITEMPORAL_CHANGE_DETECTION
-            # Under Member 3's GIS contract, the deterministic tool executed is bitemporal_change_detector
             primary_tool = SpecialistTool.BITEMPORAL_CHANGE_DETECTOR
             
             return {
@@ -186,7 +188,7 @@ class TaskRouterEngine:
             "use the optical and sar", "together to identify", "cross-modal",
             "fuse", "fusion", "complementary information"
         ]
-        if has_crossmodal_meta or any(kw in q for kw in cross_modal_keywords):
+        if has_crossmodal_meta or any(kw in q for kw in cross_modal_keywords) or ("fusion" in q):
             return {
                 "task_type": TaskType.CROSS_MODAL_FUSION.value,
                 "modality": ModalityRequirement.CROSS_MODAL_PAIR.value,
@@ -352,6 +354,12 @@ class TaskRouterEngine:
             "confidence_threshold": 0.80,
             "audit_summary": "Routing query to optical_vqa_specialist for remote sensing visual question answering."
         }
+
+
+def route(task: str) -> Dict[str, Any]:
+    """Module-level convenience route function for orchestrators."""
+    engine = TaskRouterEngine()
+    return engine.route_dict(str(task))
 
 
 if __name__ == "__main__":

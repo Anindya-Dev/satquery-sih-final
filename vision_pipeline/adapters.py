@@ -69,3 +69,4 @@ def bigearthnet_to_imagery(data):
         imagery["sar"] = {"VV": data[12], "VH": data[13]}
 
     return imagery
+bitemporal_optical_array_to_imagery = bitemporal_array_to_imagery
