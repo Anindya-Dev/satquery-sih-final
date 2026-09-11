@@ -1,0 +1,34 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Data / Weights / Cache
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+checkpoint-*/
+models/**/checkpoint-*/
+models/**/tokenizer.json
+*.tar.gz
+*.zip
+*.lmdb
+/data/
+downloads/
+!task_router/fine_tuning/data/
+*.tif
+*.tiff
+
+# IDE
+.vscode/
+.idea/
+*.swp
