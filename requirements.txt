@@ -1,2 +1,5 @@
 # Top-level requirements placeholder
 numpy
+torch
+torchvision
+rasterio
