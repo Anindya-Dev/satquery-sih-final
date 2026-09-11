@@ -16,6 +16,8 @@ __pycache__/
 *.bin
 *.onnx
 *.safetensors
+checkpoint-*/
+models/**/checkpoint-*/
 *.tar.gz
 *.zip
 *.lmdb
