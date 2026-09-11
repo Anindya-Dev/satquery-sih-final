@@ -69,8 +69,8 @@ class TaskParameters(BaseModel):
         description="True if query compares two points in time (bi-temporal change)."
     )
     threshold_method: Optional[str] = Field(
-        default="otsu",
-        description="Thresholding algorithm for masks (e.g. 'otsu', 'fixed', 'adaptive')."
+        default="fixed",
+        description="Thresholding algorithm for masks (e.g. 'fixed', 'otsu', 'adaptive')."
     )
     grounding_target: Optional[str] = Field(
         default=None,

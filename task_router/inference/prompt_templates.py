@@ -19,18 +19,19 @@ FEW_SHOT_EXEMPLARS = [
             "primary_tool": "grounding_rs_specialist",
             "secondary_tools": ["spectral_indices_calculator"],
             "parameters": {
-                "target_features": ["water_body"],
+                "target_features": ["water"],
                 "bands_required": ["B02", "B03", "B04", "B08"],
                 "indices_requested": ["NDWI"],
                 "cloud_penetration_needed": False,
                 "temporal_comparison": False,
-                "threshold_method": "otsu",
+                "threshold_method": "fixed",
+                "grounding_target": "water",
                 "grounding_prompt": "Highlight the water body referred to in the query.",
                 "vqa_question": None
             },
-            "evidence_requested": ["bounding_boxes", "confidence_scores", "grounded_overlay"],
+            "evidence_requested": ["bounding_boxes", "num_regions"],
             "confidence_threshold": 0.8,
-            "audit_summary": "Routing query to grounding_rs_specialist for water body localization."
+            "audit_summary": "Routing query to grounding_rs_specialist for water localization."
         }
     },
     {
@@ -47,11 +48,12 @@ FEW_SHOT_EXEMPLARS = [
                 "indices_requested": [],
                 "cloud_penetration_needed": True,
                 "temporal_comparison": False,
-                "threshold_method": "adaptive",
+                "threshold_method": "fixed",
+                "grounding_target": None,
                 "grounding_prompt": None,
                 "vqa_question": None
             },
-            "evidence_requested": ["inundation_mask", "flooded_area_km2", "backscatter_threshold_summary"],
+            "evidence_requested": ["inundation_mask", "flooded_area_km2", "confidence_mean"],
             "confidence_threshold": 0.85,
             "audit_summary": "Routing query to sar_flood_extractor using Sentinel-1 radar for cloud-penetrating flood detection."
         }
@@ -65,16 +67,17 @@ FEW_SHOT_EXEMPLARS = [
             "primary_tool": "bitemporal_change_detector",
             "secondary_tools": ["spectral_indices_calculator"],
             "parameters": {
-                "target_features": ["construction", "deforestation", "urban_expansion"],
-                "bands_required": [],
-                "indices_requested": [],
+                "target_features": ["change_area", "urban_expansion", "deforestation"],
+                "bands_required": ["B02", "B03", "B04", "B08"],
+                "indices_requested": ["NDVI"],
                 "cloud_penetration_needed": False,
                 "temporal_comparison": True,
-                "threshold_method": "otsu",
+                "threshold_method": "fixed",
+                "grounding_target": None,
                 "grounding_prompt": None,
                 "vqa_question": None
             },
-            "evidence_requested": ["spatial_change_mask", "change_percentage", "confidence_map"],
+            "evidence_requested": ["change_mask", "changed_area_km2", "confidence_mean"],
             "confidence_threshold": 0.8,
             "audit_summary": "Routing bi-temporal query to bitemporal_change_detector to isolate land-use change between acquisitions."
         }
@@ -90,14 +93,15 @@ FEW_SHOT_EXEMPLARS = [
             "parameters": {
                 "target_features": ["built_up", "water"],
                 "bands_required": ["B02", "B03", "B04", "B08", "VV", "VH"],
-                "indices_requested": ["NDVI", "NDWI", "NDBI"],
+                "indices_requested": ["NDVI", "NDWI"],
                 "cloud_penetration_needed": False,
                 "temporal_comparison": False,
-                "threshold_method": "otsu",
+                "threshold_method": "fixed",
+                "grounding_target": None,
                 "grounding_prompt": None,
                 "vqa_question": None
             },
-            "evidence_requested": ["fused_feature_map", "multimodal_classification", "confidence_score"],
+            "evidence_requested": ["water_mask", "built_up_mask", "water_area_km2", "built_up_area_km2"],
             "confidence_threshold": 0.85,
             "audit_summary": "Routing query to optical_sar_fusion_specialist for cross-modal complementary feature extraction."
         }

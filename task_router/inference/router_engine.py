@@ -91,6 +91,12 @@ class TaskRouterEngine:
             repaired_dict = self._semantic_parse(query, input_metadata)
             return TaskSpec.model_validate(repaired_dict)
 
+    def route_dict(self, query: str, input_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Routes a query and returns a raw dict with primitive types matching Member 3's GIS pipeline contract.
+        """
+        return self.route(query, input_metadata).model_dump(mode="json")
+
     def _generate_from_model(self, query: str, input_metadata: Optional[Dict[str, Any]]) -> Optional[str]:
         try:
             import torch
@@ -161,10 +167,10 @@ class TaskRouterEngine:
                 "parameters": {
                     "target_features": ["change_area", "urban_expansion", "deforestation"],
                     "bands_required": ["B02", "B03", "B04", "B08"],
-                    "indices_requested": ["NDVI", "NDBI"],
+                    "indices_requested": ["NDVI"],
                     "cloud_penetration_needed": False,
                     "temporal_comparison": True,
-                    "threshold_method": "otsu",
+                    "threshold_method": "fixed",
                     "grounding_target": None,
                     "grounding_prompt": None,
                     "vqa_question": query if is_vqa else None
@@ -190,10 +196,10 @@ class TaskRouterEngine:
                 "parameters": {
                     "target_features": ["built_up", "water_body", "structural_features"],
                     "bands_required": ["B02", "B03", "B04", "B08", "VV", "VH"],
-                    "indices_requested": ["NDVI", "NDWI", "NDBI"],
+                    "indices_requested": ["NDVI", "NDWI"],
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
-                    "threshold_method": "otsu",
+                    "threshold_method": "fixed",
                     "grounding_target": None,
                     "grounding_prompt": None,
                     "vqa_question": None
@@ -221,7 +227,7 @@ class TaskRouterEngine:
                     "indices_requested": [],
                     "cloud_penetration_needed": True,
                     "temporal_comparison": False,
-                    "threshold_method": "adaptive",
+                    "threshold_method": "fixed",
                     "grounding_target": None,
                     "grounding_prompt": None,
                     "vqa_question": None
@@ -258,7 +264,7 @@ class TaskRouterEngine:
                     "indices_requested": ["NDWI" if target == "water" else "NDVI"],
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
-                    "threshold_method": "otsu",
+                    "threshold_method": "fixed",
                     "grounding_target": grounding_target_key,
                     "grounding_prompt": query,
                     "vqa_question": None
@@ -308,7 +314,7 @@ class TaskRouterEngine:
                     "indices_requested": [],
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
-                    "threshold_method": "otsu",
+                    "threshold_method": "fixed",
                     "grounding_prompt": None,
                     "vqa_question": None
                 },
@@ -330,7 +336,7 @@ class TaskRouterEngine:
                 "indices_requested": [],
                 "cloud_penetration_needed": False,
                 "temporal_comparison": False,
-                "threshold_method": "otsu",
+                "threshold_method": "fixed",
                 "grounding_prompt": None,
                 "vqa_question": query
             },

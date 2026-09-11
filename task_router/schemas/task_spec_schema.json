@@ -82,8 +82,8 @@
               "type": "null"
             }
           ],
-          "default": "otsu",
-          "description": "Thresholding algorithm for masks (e.g. 'otsu', 'fixed', 'adaptive').",
+          "default": "fixed",
+          "description": "Thresholding algorithm for masks (e.g. 'fixed', 'otsu', 'adaptive').",
           "title": "Threshold Method"
         },
         "grounding_target": {

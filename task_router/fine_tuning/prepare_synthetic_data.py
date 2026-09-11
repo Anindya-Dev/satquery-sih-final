@@ -61,7 +61,7 @@ QUERY_TEMPLATES = [
         "sensors": [SensorType.SENTINEL_2_OPTICAL],
         "primary_tool": SpecialistTool.REGION_GROUNDING,
         "secondary_tools": [SpecialistTool.INDICES_CALCULATOR],
-        "evidence": ["bounding_boxes", "confidence_scores", "grounded_overlay"],
+        "evidence": ["bounding_boxes", "num_regions"],
         "queries": [
             "Highlight the water body referred to in the query.",
             "Locate and draw bounding boxes around all industrial storage tanks.",
@@ -73,8 +73,10 @@ QUERY_TEMPLATES = [
             "Segment the urban built-up cluster in the center of the tile."
         ],
         "params": lambda q: TaskParameters(
-            target_features=["water_body", "industrial", "infrastructure"],
+            target_features=["water" if "water" in q.lower() or "river" in q.lower() else "vegetation"],
             bands_required=["B02", "B03", "B04", "B08"],
+            threshold_method="fixed",
+            grounding_target="water" if "water" in q.lower() or "river" in q.lower() else "vegetation",
             grounding_prompt=q
         )
     },
@@ -95,7 +97,8 @@ QUERY_TEMPLATES = [
         ],
         "params": lambda q: TaskParameters(
             target_features=["terrain", "land_cover", "urban_features"],
-            bands_required=["B02", "B03", "B04", "B08"]
+            bands_required=["B02", "B03", "B04", "B08"],
+            threshold_method="fixed"
         )
     },
     # 4. Bi-temporal Change Detection
@@ -105,7 +108,7 @@ QUERY_TEMPLATES = [
         "sensors": [SensorType.SENTINEL_2_OPTICAL],
         "primary_tool": SpecialistTool.BITEMPORAL_CHANGE_DETECTOR,
         "secondary_tools": [SpecialistTool.INDICES_CALCULATOR],
-        "evidence": ["spatial_change_mask", "change_percentage", "confidence_map"],
+        "evidence": ["change_mask", "changed_area_km2", "confidence_mean"],
         "queries": [
             "What changed between these two dates, and where did the change occur?",
             "Detect all structural changes between the before and after acquisitions.",
@@ -116,9 +119,9 @@ QUERY_TEMPLATES = [
             "Highlight all surface water body contractions or expansions between these two dates."
         ],
         "params": lambda q: TaskParameters(
-            target_features=["construction", "deforestation", "urban_expansion"],
+            target_features=["change_area", "urban_expansion", "deforestation"],
             temporal_comparison=True,
-            threshold_method="otsu"
+            threshold_method="fixed"
         )
     },
     # 5. Bi-temporal Change VQA
@@ -126,9 +129,9 @@ QUERY_TEMPLATES = [
         "task_type": TaskType.BITEMPORAL_CHANGE_VQA,
         "modality": ModalityRequirement.BITEMPORAL_PAIR,
         "sensors": [SensorType.SENTINEL_2_OPTICAL],
-        "primary_tool": SpecialistTool.BITEMPORAL_CHANGE_VQA,
-        "secondary_tools": [SpecialistTool.BITEMPORAL_CHANGE_DETECTOR],
-        "evidence": ["textual_answer", "change_statistics", "confidence_score"],
+        "primary_tool": SpecialistTool.BITEMPORAL_CHANGE_DETECTOR,
+        "secondary_tools": [SpecialistTool.INDICES_CALCULATOR],
+        "evidence": ["change_mask", "changed_area_km2", "confidence_mean"],
         "queries": [
             "Has the built-up area increased, decreased, or remained unchanged?",
             "Did the forest boundary recede between these two observation dates?",
@@ -139,6 +142,7 @@ QUERY_TEMPLATES = [
         "params": lambda q: TaskParameters(
             target_features=["built_up", "forest", "water_level"],
             temporal_comparison=True,
+            threshold_method="fixed",
             vqa_question=q
         )
     },
@@ -149,7 +153,7 @@ QUERY_TEMPLATES = [
         "sensors": [SensorType.SENTINEL_2_OPTICAL, SensorType.SENTINEL_1_SAR],
         "primary_tool": SpecialistTool.OPTICAL_SAR_FUSION,
         "secondary_tools": [SpecialistTool.INDICES_CALCULATOR],
-        "evidence": ["fused_feature_map", "multimodal_classification", "confidence_score"],
+        "evidence": ["water_mask", "built_up_mask", "water_area_km2", "built_up_area_km2"],
         "queries": [
             "Use the optical and SAR images together to identify built-up and water-covered regions.",
             "Fuse Sentinel-2 optical and Sentinel-1 SAR observations to delineate complex urban boundaries.",
@@ -159,7 +163,9 @@ QUERY_TEMPLATES = [
         ],
         "params": lambda q: TaskParameters(
             target_features=["built_up", "water", "wetland"],
-            bands_required=["B02", "B03", "B04", "B08", "VV", "VH"]
+            bands_required=["B02", "B03", "B04", "B08", "VV", "VH"],
+            indices_requested=["NDVI", "NDWI"],
+            threshold_method="fixed"
         )
     },
     # 7. SAR Flood Detection (Cloud Penetration)
@@ -169,7 +175,7 @@ QUERY_TEMPLATES = [
         "sensors": [SensorType.SENTINEL_1_SAR],
         "primary_tool": SpecialistTool.SAR_BACKSCATTER_DETECTOR,
         "secondary_tools": [],
-        "evidence": ["inundation_mask", "flooded_area_km2", "backscatter_threshold_summary"],
+        "evidence": ["inundation_mask", "flooded_area_km2", "confidence_mean"],
         "queries": [
             "Find flooded areas under clouds.",
             "Map standing floodwater using SAR backscatter because optical imagery is cloud covered.",
@@ -181,7 +187,7 @@ QUERY_TEMPLATES = [
             target_features=["standing_water", "inundation"],
             bands_required=["VV", "VH"],
             cloud_penetration_needed=True,
-            threshold_method="adaptive"
+            threshold_method="fixed"
         )
     },
     # 8. Vegetation Health & Indices
@@ -191,7 +197,7 @@ QUERY_TEMPLATES = [
         "sensors": [SensorType.SENTINEL_2_OPTICAL],
         "primary_tool": SpecialistTool.INDICES_CALCULATOR,
         "secondary_tools": [],
-        "evidence": ["ndvi_map", "vigor_histogram", "anomaly_score"],
+        "evidence": ["NDVI_map", "mean_NDVI", "confidence_mean"],
         "queries": [
             "Assess vegetation health and crop vigor across these farmlands using NDVI.",
             "Calculate normalized difference vegetation index to detect crop water stress.",
@@ -201,7 +207,9 @@ QUERY_TEMPLATES = [
         "params": lambda q: TaskParameters(
             target_features=["vegetation", "canopy", "crops"],
             bands_required=["B04", "B08"],
-            indices_requested=["NDVI", "NDRE"]
+            indices_requested=["NDVI", "NDWI"],
+            grounding_target="vegetation",
+            threshold_method="fixed"
         )
     }
 ]
