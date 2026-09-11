@@ -54,7 +54,7 @@
           "type": "array"
         },
         "indices_requested": {
-          "description": "Remote sensing indices to compute (e.g. ['NDVI', 'NDWI', 'NDBI']).",
+          "description": "Remote sensing indices to compute (e.g. ['NDVI', 'NDWI']).",
           "items": {
             "type": "string"
           },

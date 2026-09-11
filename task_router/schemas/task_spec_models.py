@@ -58,7 +58,7 @@ class TaskParameters(BaseModel):
     )
     indices_requested: List[str] = Field(
         default_factory=list,
-        description="Remote sensing indices to compute (e.g. ['NDVI', 'NDWI', 'NDBI'])."
+        description="Remote sensing indices to compute (e.g. ['NDVI', 'NDWI'])."
     )
     cloud_penetration_needed: bool = Field(
         default=False,
