@@ -69,21 +69,4 @@ def bigearthnet_to_imagery(data):
         imagery["sar"] = {"VV": data[12], "VH": data[13]}
 
     return imagery
-
-
-def bitemporal_optical_array_to_imagery(data):
-    """Convert a ``(4, H, W)`` array into the bi-temporal optical imagery dict.
-
-    Channel order (Member 1's contract): NIR_t1, RED_t1, NIR_t2, RED_t2.
-    """
-    data = np.asarray(data, dtype=np.float32)
-    if data.ndim != 3 or data.shape[0] != 4:
-        raise ValueError("expected array of shape (4, H, W)")
-
-    nir_t1, red_t1, nir_t2, red_t2 = data
-    return {
-        "optical": {
-            "t1": {"NIR": nir_t1, "RED": red_t1},
-            "t2": {"NIR": nir_t2, "RED": red_t2},
-        },
-    }
+bitemporal_optical_array_to_imagery = bitemporal_array_to_imagery
