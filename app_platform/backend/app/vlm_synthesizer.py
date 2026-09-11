@@ -16,7 +16,7 @@ class VLMSynthesizer:
         task_spec: Dict[str, Any],
         evidence: Union[List[Dict[str, Any]], Dict[str, Any]],
     ) -> str:
-        # Handle unsupported task specs or dictionary fallback limits
+        # Handle unsupported task specs or dictionary fallbacks
         if isinstance(evidence, dict):
             if evidence.get("status") == "unsupported":
                 note = evidence.get("note", "Requested task is currently unsupported.")
@@ -31,10 +31,18 @@ class VLMSynthesizer:
         else:
             return "Unable to process query: Evidence pipeline returned empty results."
 
-        # Extract scalar metrics safely from results dictionary
-        confidence = results.get("confidence_mean", results.get("confidence", 0.69))
+        # Extract scalar metrics safely from results dictionary without fabricating fallbacks
+        confidence = results.get("confidence_mean", results.get("confidence"))
         
-        # Dynamically find area metrics in results
+        # Format confidence string or explicitly label as N/A if absent
+        if confidence is not None and isinstance(confidence, (int, float)):
+            conf_str = f"{confidence * 100:.1f}%" if confidence <= 1.0 else f"{confidence}%"
+        elif confidence is not None:
+            conf_str = str(confidence)
+        else:
+            conf_str = "N/A"
+
+        # Dynamically locate area metrics in results
         area_km2 = (
             results.get("flooded_area_km2")
             or results.get("changed_area_km2")
@@ -47,13 +55,7 @@ class VLMSynthesizer:
         mean_ndwi = results.get("mean_NDWI")
         bboxes = results.get("bounding_boxes")
 
-        # Format confidence score string
-        if isinstance(confidence, (int, float)):
-            conf_str = f"{confidence * 100:.1f}%" if confidence <= 1.0 else f"{confidence}%"
-        else:
-            conf_str = str(confidence)
-
-        # Build grounded response strictly using scalar metrics (avoiding NumPy array dumps)
+        # Build grounded response strictly using scalar metrics
         if area_km2 is not None:
             return (
                 f"Based on satellite analysis for target '{target}', "
@@ -72,13 +74,9 @@ class VLMSynthesizer:
             )
         elif bboxes is not None:
             num_regions = results.get("num_regions", len(bboxes))
-            return (
-                f"Grounding analysis for target '{target}' identified {num_regions} region(s) "
-                f"with a confidence score of {conf_str}."
-            )
+            conf_suffix = f" with a confidence score of {conf_str}." if conf_str != "N/A" else "."
+            return f"Grounding analysis for target '{target}' identified {num_regions} region(s){conf_suffix}"
 
         tool_name = entry.get("tool", task_spec.get("primary_tool", "analysis tool"))
-        return (
-            f"Analysis completed via '{tool_name}' for target '{target}'. "
-            f"Confidence score: {conf_str}."
-        )
+        conf_suffix = f" Confidence score: {conf_str}." if conf_str != "N/A" else ""
+        return f"Analysis completed via '{tool_name}' for target '{target}'.{conf_suffix}"
