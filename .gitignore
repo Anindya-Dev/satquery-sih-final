@@ -19,8 +19,9 @@ __pycache__/
 *.tar.gz
 *.zip
 *.lmdb
-data/
+/data/
 downloads/
+!task_router/fine_tuning/data/
 *.tif
 *.tiff
 
