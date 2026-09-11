@@ -35,6 +35,30 @@ FEW_SHOT_EXEMPLARS = [
         }
     },
     {
+        "query": "Identify built-up grounding regions.",
+        "output": {
+            "task_type": "single_image_grounding",
+            "modality": "OPTICAL",
+            "sensors": ["Sentinel-2"],
+            "primary_tool": "grounding_rs_specialist",
+            "secondary_tools": [],
+            "parameters": {
+                "target_features": ["built_up"],
+                "bands_required": ["B02", "B03", "B04", "B08"],
+                "indices_requested": [],
+                "cloud_penetration_needed": False,
+                "temporal_comparison": False,
+                "threshold_method": "fixed",
+                "grounding_target": "built_up",
+                "grounding_prompt": "Identify built-up grounding regions.",
+                "vqa_question": None
+            },
+            "evidence_requested": ["bounding_boxes", "num_regions"],
+            "confidence_threshold": 0.8,
+            "audit_summary": "Routing query to grounding_rs_specialist for built-up localization."
+        }
+    },
+    {
         "query": "Find flooded areas under clouds.",
         "output": {
             "task_type": "sar_flood_detection",

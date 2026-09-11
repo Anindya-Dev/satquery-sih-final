@@ -240,28 +240,36 @@ class TaskRouterEngine:
         # 4. Text-Guided Region Grounding
         grounding_keywords = [
             "highlight", "locate", "draw bounding box", "bounding boxes",
-            "pinpoint", "outline", "find the", "where is", "segment the"
+            "pinpoint", "outline", "find the", "where is", "segment the",
+            "grounding", "ground", "delineate", "detect and localize"
         ]
-        if any(kw in q for kw in grounding_keywords):
+        is_grounding = any(kw in q for kw in grounding_keywords) or (
+            any(verb in q for verb in ["identify", "find", "detect", "localize", "ground"]) and
+            any(noun in q for noun in ["region", "regions", "zone", "zones", "boundary", "boundaries", "area", "areas", "cluster"])
+        )
+        if is_grounding:
             target = "water"
             grounding_target_key = "water"
+            indices = ["NDWI"]
             if any(t in q for t in ["built", "building", "tank", "storage", "airport", "urban"]):
                 target = "built_up"
                 grounding_target_key = "built_up"
+                indices = []
             elif any(t in q for t in ["forest", "vegetation", "crop", "tree"]):
                 target = "vegetation"
                 grounding_target_key = "vegetation"
+                indices = ["NDVI"]
 
             return {
                 "task_type": TaskType.SINGLE_IMAGE_GROUNDING.value,
                 "modality": ModalityRequirement.OPTICAL.value,
                 "sensors": [SensorType.SENTINEL_2_OPTICAL.value],
                 "primary_tool": SpecialistTool.REGION_GROUNDING.value,
-                "secondary_tools": [SpecialistTool.INDICES_CALCULATOR.value],
+                "secondary_tools": [SpecialistTool.INDICES_CALCULATOR.value] if indices else [],
                 "parameters": {
                     "target_features": [target],
                     "bands_required": ["B02", "B03", "B04", "B08"],
-                    "indices_requested": ["NDWI" if target == "water" else "NDVI"],
+                    "indices_requested": indices,
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
                     "threshold_method": "fixed",
