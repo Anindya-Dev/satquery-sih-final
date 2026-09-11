@@ -89,6 +89,21 @@ def test_single_image_grounding_routing(router):
     assert "num_regions" in spec.evidence_requested
 
 
+def test_builtup_and_vegetation_grounding_routing(router):
+    """SIH Case: Grounding built-up and vegetation regions."""
+    builtup_query = "Identify built-up grounding regions."
+    spec_builtup = router.route(builtup_query)
+    assert spec_builtup.primary_tool == SpecialistTool.REGION_GROUNDING
+    assert spec_builtup.parameters.grounding_target == "built_up"
+    assert "bounding_boxes" in spec_builtup.evidence_requested
+
+    veg_query = "Locate and ground vegetation zones."
+    spec_veg = router.route(veg_query)
+    assert spec_veg.primary_tool == SpecialistTool.REGION_GROUNDING
+    assert spec_veg.parameters.grounding_target == "vegetation"
+    assert "bounding_boxes" in spec_veg.evidence_requested
+
+
 def test_single_image_captioning_routing(router):
     """SIH Case: Scene description / captioning."""
     query = "Describe the land-cover and major objects visible in this image."

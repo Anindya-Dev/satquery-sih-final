@@ -1,32 +1,370 @@
-"""Router engine implementation for SatQuery SIH pipeline."""
+"""
+Router engine implementation for SatQuery SIH pipeline.
+Routes natural language queries to validated TaskSpec schemas and dicts.
+Supports neural fine-tuned model inference and high-precision semantic parsing.
+"""
+
+import os
+import re
+import sys
+import json
+import time
+from typing import Optional, Dict, Any
+from pathlib import Path
+
+# Ensure root directory is on PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from task_router.schemas.task_spec_models import (
+    TaskType,
+    ModalityRequirement,
+    SensorType,
+    SpecialistTool,
+    TaskParameters,
+    TaskSpec
+)
+from task_router.inference.prompt_templates import format_router_prompt
+
 
 class TaskRouterEngine:
-    def route_dict(self, user_query: str) -> dict:
-        query_lower = user_query.lower()
-        
-        # Match primary tool based on query intent
-        if "flood" in query_lower or "inundation" in query_lower:
-            primary_tool = "sar_flood_extractor"
-            target = "flood"
-        elif "fusion" in query_lower or ("sar" in query_lower and "optical" in query_lower):
-            primary_tool = "optical_sar_fusion_specialist"
-            target = "fusion"
-        elif "grounding" in query_lower or "locate" in query_lower or "built-up" in query_lower:
-            primary_tool = "grounding_rs_specialist"
-            target = "grounding"
-        elif "change" in query_lower or "bitemporal" in query_lower:
-            primary_tool = "bitemporal_change_detector"
-            target = "change"
-        else:
-            primary_tool = "spectral_indices_calculator"
-            target = "spectral"
+    """
+    Main Router Engine for SatQuery AI.
+    Translates user queries into validated TaskSpec instances and dicts for downstream pipelines.
+    """
 
+    def __init__(self, model_path: Optional[str] = None, device: str = "cpu"):
+        self.model_path = model_path
+        self.device = device
+        self.model = None
+        self.tokenizer = None
+
+        if model_path and os.path.exists(model_path):
+            self._load_local_model(model_path)
+
+    def _load_local_model(self, model_path: str):
+        try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            import torch
+            print(f"[*] Loading fine-tuned Task Router from {model_path}...")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map=self.device,
+                torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
+                trust_remote_code=True
+            )
+            print("[✓] Model loaded successfully.")
+        except Exception as e:
+            print(f"[!] Warning: Could not load local model: {e}. Falling back to semantic parser.")
+            self.model = None
+
+    def route(self, query: str, input_metadata: Optional[Dict[str, Any]] = None) -> TaskSpec:
+        """
+        Routes a query and returns a strictly validated TaskSpec.
+        """
+        start_time = time.time()
+        raw_json_str = None
+
+        # 1. If fine-tuned model is loaded, run neural inference
+        if self.model is not None and self.tokenizer is not None:
+            raw_json_str = self._generate_from_model(query, input_metadata)
+
+        # 2. If no model loaded or generation failed, use intelligent semantic parser
+        if not raw_json_str:
+            task_dict = self._semantic_parse(query, input_metadata)
+            return TaskSpec.model_validate(task_dict)
+
+        # 3. Clean and parse JSON from neural model
+        parsed_dict = self._clean_and_parse_json(raw_json_str)
+        if not parsed_dict:
+            task_dict = self._semantic_parse(query, input_metadata)
+            return TaskSpec.model_validate(task_dict)
+
+        # 4. Validate through Pydantic
+        try:
+            task_spec = TaskSpec.model_validate(parsed_dict)
+            return task_spec
+        except Exception as e:
+            print(f"[!] Schema validation failed: {e}. Running semantic repair...")
+            repaired_dict = self._semantic_parse(query, input_metadata)
+            return TaskSpec.model_validate(repaired_dict)
+
+    def route_dict(self, query: str, input_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Routes a query and returns a raw dict with primitive types matching Member 3 & Member 4's contract.
+        """
+        d = self.route(query, input_metadata).model_dump(mode="json")
+        # Ensure convenience top-level target is available for orchestrator
+        if "target" not in d:
+            targets = d.get("parameters", {}).get("target_features", [])
+            d["target"] = targets[0] if targets else "general"
+        d["query"] = query
+        return d
+
+    def _generate_from_model(self, query: str, input_metadata: Optional[Dict[str, Any]]) -> Optional[str]:
+        try:
+            import torch
+            prompt = format_router_prompt(query, input_metadata)
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    temperature=0.1,
+                    top_p=0.9,
+                    do_sample=False
+                )
+            generated_text = self.tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+            return generated_text
+        except Exception as e:
+            print(f"[!] Neural inference error: {e}")
+            return None
+
+    def _clean_and_parse_json(self, text: str) -> Optional[Dict[str, Any]]:
+        # Strip markdown fences if present
+        text = re.sub(r"^```json\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^```\s*", "", text, flags=re.MULTILINE)
+        text = text.strip()
+
+        # Find first '{' and last '}'
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            json_substr = text[start:end + 1]
+            try:
+                return json.loads(json_substr)
+            except json.JSONDecodeError:
+                return None
+        return None
+
+    def _semantic_parse(self, query: str, input_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        High-precision semantic classifier aligned with the SIH problem statement and Member 3/4 contracts.
+        """
+        q = query.lower()
+
+        # Check metadata hints if provided
+        has_bitemporal_meta = input_metadata and input_metadata.get("temporal_pair", False)
+        has_crossmodal_meta = input_metadata and input_metadata.get("cross_modal", False)
+
+        # 1. Bi-temporal Change Detection & Change VQA
+        temporal_keywords = [
+            "changed between", "between these two dates", "between t1 and t2",
+            "before and after", "what changed", "where did the change occur",
+            "increased, decreased, or remained unchanged", "increased or decreased",
+            "deforestation between", "urban expansion between", "change detection",
+            "two dates", "two acquisitions", "over time"
+        ]
+        if has_bitemporal_meta or any(kw in q for kw in temporal_keywords) or ("change" in q and "dates" in q):
+            is_vqa = any(w in q for w in ["?", "has", "did", "how much", "was the", "increased, decreased"])
+            task_type = TaskType.BITEMPORAL_CHANGE_VQA if is_vqa else TaskType.BITEMPORAL_CHANGE_DETECTION
+            primary_tool = SpecialistTool.BITEMPORAL_CHANGE_DETECTOR
+            
+            return {
+                "task_type": task_type.value,
+                "modality": ModalityRequirement.BITEMPORAL_PAIR.value,
+                "sensors": [SensorType.SENTINEL_2_OPTICAL.value],
+                "primary_tool": primary_tool.value,
+                "secondary_tools": [SpecialistTool.INDICES_CALCULATOR.value],
+                "parameters": {
+                    "target_features": ["change_area", "urban_expansion", "deforestation"],
+                    "bands_required": ["B02", "B03", "B04", "B08"],
+                    "indices_requested": ["NDVI"],
+                    "cloud_penetration_needed": False,
+                    "temporal_comparison": True,
+                    "threshold_method": "fixed",
+                    "grounding_target": None,
+                    "grounding_prompt": None,
+                    "vqa_question": query if is_vqa else None
+                },
+                "evidence_requested": ["change_mask", "changed_area_km2", "confidence_mean"],
+                "confidence_threshold": 0.80,
+                "audit_summary": f"Routing query to {primary_tool.value} for bi-temporal comparative analysis."
+            }
+
+        # 2. Cross-Modal Optical + SAR Analysis
+        cross_modal_keywords = [
+            "optical and sar", "sar and optical", "cartosat and risat",
+            "use the optical and sar", "together to identify", "cross-modal",
+            "fuse", "fusion", "complementary information"
+        ]
+        if has_crossmodal_meta or any(kw in q for kw in cross_modal_keywords) or ("fusion" in q):
+            return {
+                "task_type": TaskType.CROSS_MODAL_FUSION.value,
+                "modality": ModalityRequirement.CROSS_MODAL_PAIR.value,
+                "sensors": [SensorType.SENTINEL_2_OPTICAL.value, SensorType.SENTINEL_1_SAR.value],
+                "primary_tool": SpecialistTool.OPTICAL_SAR_FUSION.value,
+                "secondary_tools": [SpecialistTool.INDICES_CALCULATOR.value],
+                "parameters": {
+                    "target_features": ["built_up", "water_body", "structural_features"],
+                    "bands_required": ["B02", "B03", "B04", "B08", "VV", "VH"],
+                    "indices_requested": ["NDVI", "NDWI"],
+                    "cloud_penetration_needed": False,
+                    "temporal_comparison": False,
+                    "threshold_method": "fixed",
+                    "grounding_target": None,
+                    "grounding_prompt": None,
+                    "vqa_question": None
+                },
+                "evidence_requested": ["water_mask", "built_up_mask", "water_area_km2", "built_up_area_km2"],
+                "confidence_threshold": 0.85,
+                "audit_summary": "Routing query to optical_sar_fusion_specialist for joint cross-sensor reasoning."
+            }
+
+        # 3. SAR Flood Detection / Cloud Penetration
+        sar_flood_keywords = [
+            "flood", "flooded", "under cloud", "under clouds", "monsoon",
+            "inundat", "submerg", "standing water", "sar backscatter", "radar"
+        ]
+        if any(kw in q for kw in sar_flood_keywords) or ("cloud" in q and "water" in q):
+            return {
+                "task_type": TaskType.SAR_FLOOD_DETECTION.value,
+                "modality": ModalityRequirement.SAR.value,
+                "sensors": [SensorType.SENTINEL_1_SAR.value],
+                "primary_tool": SpecialistTool.SAR_BACKSCATTER_DETECTOR.value,
+                "secondary_tools": [],
+                "parameters": {
+                    "target_features": ["standing_water", "flood_inundation"],
+                    "bands_required": ["VV", "VH"],
+                    "indices_requested": [],
+                    "cloud_penetration_needed": True,
+                    "temporal_comparison": False,
+                    "threshold_method": "fixed",
+                    "grounding_target": None,
+                    "grounding_prompt": None,
+                    "vqa_question": None
+                },
+                "evidence_requested": ["inundation_mask", "flooded_area_km2", "confidence_mean"],
+                "confidence_threshold": 0.85,
+                "audit_summary": "Routing query to sar_flood_extractor using SAR radar to penetrate cloud cover."
+            }
+
+        # 4. Text-Guided Region Grounding
+        grounding_keywords = [
+            "highlight", "locate", "draw bounding box", "bounding boxes",
+            "pinpoint", "outline", "find the", "where is", "segment the",
+            "grounding", "ground", "delineate", "detect and localize"
+        ]
+        is_grounding = any(kw in q for kw in grounding_keywords) or (
+            any(verb in q for verb in ["identify", "find", "detect", "localize", "ground"]) and
+            any(noun in q for noun in ["region", "regions", "zone", "zones", "boundary", "boundaries", "area", "areas", "cluster"])
+        )
+        if is_grounding:
+            target = "water"
+            grounding_target_key = "water"
+            indices = ["NDWI"]
+            if any(t in q for t in ["built", "building", "tank", "storage", "airport", "urban"]):
+                target = "built_up"
+                grounding_target_key = "built_up"
+                indices = []
+            elif any(t in q for t in ["forest", "vegetation", "crop", "tree"]):
+                target = "vegetation"
+                grounding_target_key = "vegetation"
+                indices = ["NDVI"]
+
+            return {
+                "task_type": TaskType.SINGLE_IMAGE_GROUNDING.value,
+                "modality": ModalityRequirement.OPTICAL.value,
+                "sensors": [SensorType.SENTINEL_2_OPTICAL.value],
+                "primary_tool": SpecialistTool.REGION_GROUNDING.value,
+                "secondary_tools": [SpecialistTool.INDICES_CALCULATOR.value] if indices else [],
+                "parameters": {
+                    "target_features": [target],
+                    "bands_required": ["B02", "B03", "B04", "B08"],
+                    "indices_requested": indices,
+                    "cloud_penetration_needed": False,
+                    "temporal_comparison": False,
+                    "threshold_method": "fixed",
+                    "grounding_target": grounding_target_key,
+                    "grounding_prompt": query,
+                    "vqa_question": None
+                },
+                "evidence_requested": ["bounding_boxes", "num_regions"],
+                "confidence_threshold": 0.80,
+                "audit_summary": f"Routing query to grounding_rs_specialist for spatial localization of '{target}'."
+            }
+
+        # 5. Vegetation Health & Remote Sensing Indices
+        indices_keywords = ["ndvi", "ndwi", "crop health", "vegetation health", "crop vigor", "drought", "chlorophyll"]
+        if any(kw in q for kw in indices_keywords):
+            return {
+                "task_type": TaskType.VEGETATION_HEALTH_ANALYSIS.value,
+                "modality": ModalityRequirement.OPTICAL.value,
+                "sensors": [SensorType.SENTINEL_2_OPTICAL.value],
+                "primary_tool": SpecialistTool.INDICES_CALCULATOR.value,
+                "secondary_tools": [],
+                "parameters": {
+                    "target_features": ["vegetation", "canopy", "crops"],
+                    "bands_required": ["B04", "B08"],
+                    "indices_requested": ["NDVI", "NDWI"],
+                    "cloud_penetration_needed": False,
+                    "temporal_comparison": False,
+                    "threshold_method": "fixed",
+                    "grounding_target": "vegetation",
+                    "grounding_prompt": None,
+                    "vqa_question": None
+                },
+                "evidence_requested": ["NDVI_map", "mean_NDVI", "confidence_mean"],
+                "confidence_threshold": 0.85,
+                "audit_summary": "Routing query to spectral_indices_calculator for vegetation index analysis."
+            }
+
+        # 6. Scene Captioning / Description
+        caption_keywords = ["describe", "caption", "scene summary", "what does this satellite capture show", "summarize"]
+        if any(kw in q for kw in caption_keywords):
+            return {
+                "task_type": TaskType.SINGLE_IMAGE_CAPTIONING.value,
+                "modality": ModalityRequirement.OPTICAL.value,
+                "sensors": [SensorType.SENTINEL_2_OPTICAL.value],
+                "primary_tool": SpecialistTool.SCENE_CAPTIONER.value,
+                "secondary_tools": [],
+                "parameters": {
+                    "target_features": ["terrain", "land_cover"],
+                    "bands_required": ["B02", "B03", "B04", "B08"],
+                    "indices_requested": [],
+                    "cloud_penetration_needed": False,
+                    "temporal_comparison": False,
+                    "threshold_method": "fixed",
+                    "grounding_prompt": None,
+                    "vqa_question": None
+                },
+                "evidence_requested": ["descriptive_caption", "key_attributes", "confidence_score"],
+                "confidence_threshold": 0.80,
+                "audit_summary": "Routing query to captioning_rs_specialist for comprehensive scene description."
+            }
+
+        # 7. Default Baseline: Single Image VQA (Mandatory baseline per problem statement)
         return {
-            "primary_tool": primary_tool,
-            "target": target,
-            "query": user_query
+            "task_type": TaskType.SINGLE_IMAGE_VQA.value,
+            "modality": ModalityRequirement.OPTICAL.value,
+            "sensors": [SensorType.SENTINEL_2_OPTICAL.value],
+            "primary_tool": SpecialistTool.OPTICAL_VQA.value,
+            "secondary_tools": [],
+            "parameters": {
+                "target_features": ["land_cover", "objects"],
+                "bands_required": ["B02", "B03", "B04", "B08"],
+                "indices_requested": [],
+                "cloud_penetration_needed": False,
+                "temporal_comparison": False,
+                "threshold_method": "fixed",
+                "grounding_prompt": None,
+                "vqa_question": query
+            },
+            "evidence_requested": ["textual_answer", "confidence_score", "attention_map"],
+            "confidence_threshold": 0.80,
+            "audit_summary": "Routing query to optical_vqa_specialist for remote sensing visual question answering."
         }
 
-def route(task):
+
+def route(task: str) -> Dict[str, Any]:
+    """Module-level convenience route function for orchestrators."""
     engine = TaskRouterEngine()
     return engine.route_dict(str(task))
+
+
+if __name__ == "__main__":
+    router = TaskRouterEngine()
+    test_query = sys.argv[1] if len(sys.argv) > 1 else "Find flooded areas under clouds."
+    print(f"Query: '{test_query}'\n")
+    spec = router.route(test_query)
+    print(spec.model_dump_json(indent=2))
