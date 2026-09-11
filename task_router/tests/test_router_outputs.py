@@ -43,7 +43,8 @@ def test_bitemporal_change_detection_routing(router):
     assert spec.modality == ModalityRequirement.BITEMPORAL_PAIR
     assert spec.primary_tool == SpecialistTool.BITEMPORAL_CHANGE_DETECTOR
     assert spec.parameters.temporal_comparison is True
-    assert "spatial_change_mask" in spec.evidence_requested
+    assert "change_mask" in spec.evidence_requested
+    assert "changed_area_km2" in spec.evidence_requested
 
 
 def test_bitemporal_change_vqa_routing(router):
@@ -54,9 +55,11 @@ def test_bitemporal_change_vqa_routing(router):
     assert isinstance(spec, TaskSpec)
     assert spec.task_type == TaskType.BITEMPORAL_CHANGE_VQA
     assert spec.modality == ModalityRequirement.BITEMPORAL_PAIR
-    assert spec.primary_tool == SpecialistTool.BITEMPORAL_CHANGE_VQA
+    # Routes to Member 3's supported bitemporal_change_detector
+    assert spec.primary_tool == SpecialistTool.BITEMPORAL_CHANGE_DETECTOR
     assert spec.parameters.temporal_comparison is True
     assert spec.parameters.vqa_question is not None
+    assert "change_mask" in spec.evidence_requested
 
 
 def test_cross_modal_fusion_routing(router):
@@ -68,7 +71,8 @@ def test_cross_modal_fusion_routing(router):
     assert spec.task_type == TaskType.CROSS_MODAL_FUSION
     assert spec.modality == ModalityRequirement.CROSS_MODAL_PAIR
     assert spec.primary_tool == SpecialistTool.OPTICAL_SAR_FUSION
-    assert "fused_feature_map" in spec.evidence_requested
+    assert "water_mask" in spec.evidence_requested
+    assert "built_up_mask" in spec.evidence_requested
 
 
 def test_single_image_grounding_routing(router):
@@ -80,8 +84,9 @@ def test_single_image_grounding_routing(router):
     assert spec.task_type == TaskType.SINGLE_IMAGE_GROUNDING
     assert spec.modality == ModalityRequirement.OPTICAL
     assert spec.primary_tool == SpecialistTool.REGION_GROUNDING
-    assert spec.parameters.grounding_prompt is not None
+    assert spec.parameters.grounding_target == "water"
     assert "bounding_boxes" in spec.evidence_requested
+    assert "num_regions" in spec.evidence_requested
 
 
 def test_single_image_captioning_routing(router):

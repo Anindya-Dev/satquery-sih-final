@@ -72,6 +72,10 @@ class TaskParameters(BaseModel):
         default="otsu",
         description="Thresholding algorithm for masks (e.g. 'otsu', 'fixed', 'adaptive')."
     )
+    grounding_target: Optional[str] = Field(
+        default=None,
+        description="Target feature to localize for grounding_rs_specialist (e.g. 'water', 'built_up', 'vegetation')."
+    )
     grounding_prompt: Optional[str] = Field(
         default=None,
         description="Text prompt if task involves locating/bounding specific regions."

@@ -149,7 +149,8 @@ class TaskRouterEngine:
         if has_bitemporal_meta or any(kw in q for kw in temporal_keywords):
             is_vqa = any(w in q for w in ["?", "has", "did", "how much", "was the", "increased, decreased"])
             task_type = TaskType.BITEMPORAL_CHANGE_VQA if is_vqa else TaskType.BITEMPORAL_CHANGE_DETECTION
-            primary_tool = SpecialistTool.BITEMPORAL_CHANGE_VQA if is_vqa else SpecialistTool.BITEMPORAL_CHANGE_DETECTOR
+            # Under Member 3's GIS contract, the deterministic tool executed is bitemporal_change_detector
+            primary_tool = SpecialistTool.BITEMPORAL_CHANGE_DETECTOR
             
             return {
                 "task_type": task_type.value,
@@ -164,10 +165,11 @@ class TaskRouterEngine:
                     "cloud_penetration_needed": False,
                     "temporal_comparison": True,
                     "threshold_method": "otsu",
+                    "grounding_target": None,
                     "grounding_prompt": None,
                     "vqa_question": query if is_vqa else None
                 },
-                "evidence_requested": ["spatial_change_mask", "change_percentage", "confidence_map"],
+                "evidence_requested": ["change_mask", "changed_area_km2", "confidence_mean"],
                 "confidence_threshold": 0.80,
                 "audit_summary": f"Routing query to {primary_tool.value} for bi-temporal comparative analysis."
             }
@@ -192,10 +194,11 @@ class TaskRouterEngine:
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
                     "threshold_method": "otsu",
+                    "grounding_target": None,
                     "grounding_prompt": None,
                     "vqa_question": None
                 },
-                "evidence_requested": ["fused_feature_map", "multimodal_classification", "confidence_score"],
+                "evidence_requested": ["water_mask", "built_up_mask", "water_area_km2", "built_up_area_km2"],
                 "confidence_threshold": 0.85,
                 "audit_summary": "Routing query to optical_sar_fusion_specialist for joint cross-sensor reasoning."
             }
@@ -219,10 +222,11 @@ class TaskRouterEngine:
                     "cloud_penetration_needed": True,
                     "temporal_comparison": False,
                     "threshold_method": "adaptive",
+                    "grounding_target": None,
                     "grounding_prompt": None,
                     "vqa_question": None
                 },
-                "evidence_requested": ["inundation_mask", "flooded_area_km2", "backscatter_threshold_summary"],
+                "evidence_requested": ["inundation_mask", "flooded_area_km2", "confidence_mean"],
                 "confidence_threshold": 0.85,
                 "audit_summary": "Routing query to sar_flood_extractor using SAR radar to penetrate cloud cover."
             }
@@ -233,11 +237,14 @@ class TaskRouterEngine:
             "pinpoint", "outline", "find the", "where is", "segment the"
         ]
         if any(kw in q for kw in grounding_keywords):
-            target = "feature_of_interest"
-            for t in ["water body", "lake", "river", "storage tank", "airport", "forest", "building", "solar panel", "bridge"]:
-                if t in q:
-                    target = t
-                    break
+            target = "water"
+            grounding_target_key = "water"
+            if any(t in q for t in ["built", "building", "tank", "storage", "airport", "urban"]):
+                target = "built_up"
+                grounding_target_key = "built_up"
+            elif any(t in q for t in ["forest", "vegetation", "crop", "tree"]):
+                target = "vegetation"
+                grounding_target_key = "vegetation"
 
             return {
                 "task_type": TaskType.SINGLE_IMAGE_GROUNDING.value,
@@ -248,14 +255,15 @@ class TaskRouterEngine:
                 "parameters": {
                     "target_features": [target],
                     "bands_required": ["B02", "B03", "B04", "B08"],
-                    "indices_requested": ["NDWI" if "water" in target or "river" in target else "NDVI"],
+                    "indices_requested": ["NDWI" if target == "water" else "NDVI"],
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
                     "threshold_method": "otsu",
+                    "grounding_target": grounding_target_key,
                     "grounding_prompt": query,
                     "vqa_question": None
                 },
-                "evidence_requested": ["bounding_boxes", "confidence_scores", "grounded_overlay"],
+                "evidence_requested": ["bounding_boxes", "num_regions"],
                 "confidence_threshold": 0.80,
                 "audit_summary": f"Routing query to grounding_rs_specialist for spatial localization of '{target}'."
             }
@@ -272,14 +280,15 @@ class TaskRouterEngine:
                 "parameters": {
                     "target_features": ["vegetation", "canopy", "crops"],
                     "bands_required": ["B04", "B08"],
-                    "indices_requested": ["NDVI", "NDRE"],
+                    "indices_requested": ["NDVI", "NDWI"],
                     "cloud_penetration_needed": False,
                     "temporal_comparison": False,
                     "threshold_method": "fixed",
+                    "grounding_target": "vegetation",
                     "grounding_prompt": None,
                     "vqa_question": None
                 },
-                "evidence_requested": ["ndvi_map", "vigor_histogram", "anomaly_score"],
+                "evidence_requested": ["NDVI_map", "mean_NDVI", "confidence_mean"],
                 "confidence_threshold": 0.85,
                 "audit_summary": "Routing query to spectral_indices_calculator for vegetation index analysis."
             }

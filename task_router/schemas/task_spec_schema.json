@@ -86,6 +86,19 @@
           "description": "Thresholding algorithm for masks (e.g. 'otsu', 'fixed', 'adaptive').",
           "title": "Threshold Method"
         },
+        "grounding_target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target feature to localize for grounding_rs_specialist (e.g. 'water', 'built_up', 'vegetation').",
+          "title": "Grounding Target"
+        },
         "grounding_prompt": {
           "anyOf": [
             {
