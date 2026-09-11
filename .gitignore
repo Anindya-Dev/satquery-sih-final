@@ -1,0 +1,30 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Data / Weights / Cache
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+*.tar.gz
+*.zip
+*.lmdb
+data/
+downloads/
+*.tif
+*.tiff
+
+# IDE
+.vscode/
+.idea/
+*.swp
