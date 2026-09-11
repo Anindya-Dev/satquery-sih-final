@@ -1,59 +1,82 @@
-import json
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Union
+
 
 class VLMSynthesizer:
     """
-    Member 4 Module: Ingests technical Evidence JSON from Member 3's Vision Pipeline 
-    and synthesizes a natural language, non-expert response without inventing data.
+    Member 4 Module: Ingests Member 3's Evidence list contract and synthesizes 
+    a natural language response using verbatim scalar metrics.
     """
-    def __init__(self, model_path: Optional[str] = None):
-        # Optional: Initialize local LLM/VLM tokenizer or inference engine here
+
+    def __init__(self, model_path: str = None):
         self.model_path = model_path
 
-    def _build_prompt(self, user_query: str, task_spec: Dict[str, Any], evidence: Dict[str, Any]) -> str:
-        """
-        Constructs a strict system prompt to guide LLM/VLM generation without hallucinations.
-        """
-        return f"""
-System: You are an expert satellite remote sensing analyst. 
-Synthesize the technical Evidence JSON into a clear, direct answer for a non-expert user. 
-Do not hallucinate facts, locations, or metrics not explicitly present in the evidence.
-
-User Query: "{user_query}"
-Task Spec: {json.dumps(task_spec)}
-
-Evidence Data:
-{json.dumps(evidence, indent=2)}
-
-Instructions:
-1. Directly state the key findings (e.g., target detected, affected area percentage).
-2. Include the confidence score from the evidence data.
-3. Keep the overall response factual, helpful, and concise (under 100 words).
-"""
-
     async def generate_grounded_answer(
-        self, 
-        user_query: str, 
-        task_spec: Dict[str, Any], 
-        evidence: Dict[str, Any]
+        self,
+        user_query: str,
+        task_spec: Dict[str, Any],
+        evidence: Union[List[Dict[str, Any]], Dict[str, Any]],
     ) -> str:
-        """
-        Generates the grounded response string returned to the backend API and frontend chat.
-        """
-        # Build strict prompt for future local model inference
-        prompt = self._build_prompt(user_query, task_spec, evidence)
+        # Handle unsupported task specs or dictionary fallbacks
+        if isinstance(evidence, dict):
+            if evidence.get("status") == "unsupported":
+                note = evidence.get("note", "Requested task is currently unsupported.")
+                return f"Unable to process query: {note}"
+            entry = evidence
+            results = evidence
+            target = evidence.get("target", "unknown")
+        elif isinstance(evidence, list) and len(evidence) > 0:
+            entry = evidence[0]
+            results = entry.get("results", {})
+            target = entry.get("target") or task_spec.get("parameters", {}).get("target_features", "specified region")
+        else:
+            return "Unable to process query: Evidence pipeline returned empty results."
 
-        # Extract primary metrics dynamically from task_spec and evidence JSON
-        target = task_spec.get("target", "flood_detection")
-        modality = task_spec.get("modality", "SAR")
-        coverage = evidence.get("affected_area_pct", 14.2)
-        confidence = evidence.get("confidence", 0.91)
+        # Extract scalar metrics safely from results dictionary without fabricating fallbacks
+        confidence = results.get("confidence_mean", results.get("confidence"))
+        
+        # Format confidence string or explicitly label as N/A if absent
+        if confidence is not None and isinstance(confidence, (int, float)):
+            conf_str = f"{confidence * 100:.1f}%" if confidence <= 1.0 else f"{confidence}%"
+        elif confidence is not None:
+            conf_str = str(confidence)
+        else:
+            conf_str = "N/A"
 
-        # Format clean, deterministic response grounded directly in evidence
-        synthesized_text = (
-            f"Based on {modality} satellite data for '{target}', "
-            f"the pipeline identified an affected area coverage of {coverage}%. "
-            f"Analysis confidence score: {confidence}."
+        # Dynamically locate area metrics in results
+        area_km2 = (
+            results.get("flooded_area_km2")
+            or results.get("changed_area_km2")
+            or results.get("water_area_km2")
+            or results.get("built_up_area_km2")
         )
+        
+        # Check for index or grounding results
+        mean_ndvi = results.get("mean_NDVI")
+        mean_ndwi = results.get("mean_NDWI")
+        bboxes = results.get("bounding_boxes")
 
-        return synthesized_text
+        # Build grounded response strictly using scalar metrics
+        if area_km2 is not None:
+            return (
+                f"Based on satellite analysis for target '{target}', "
+                f"the system detected an affected coverage of {area_km2} km² "
+                f"with a confidence score of {conf_str}."
+            )
+        elif mean_ndvi is not None:
+            return (
+                f"Spectral analysis for target '{target}' yields a mean NDVI of {mean_ndvi:.3f} "
+                f"with a confidence score of {conf_str}."
+            )
+        elif mean_ndwi is not None:
+            return (
+                f"Spectral analysis for target '{target}' yields a mean NDWI of {mean_ndwi:.3f} "
+                f"with a confidence score of {conf_str}."
+            )
+        elif bboxes is not None:
+            num_regions = results.get("num_regions", len(bboxes))
+            conf_suffix = f" with a confidence score of {conf_str}." if conf_str != "N/A" else "."
+            return f"Grounding analysis for target '{target}' identified {num_regions} region(s){conf_suffix}"
+
+        tool_name = entry.get("tool", task_spec.get("primary_tool", "analysis tool"))
+        conf_suffix = f" Confidence score: {conf_str}." if conf_str != "N/A" else ""
+        return f"Analysis completed via '{tool_name}' for target '{target}'.{conf_suffix}"
