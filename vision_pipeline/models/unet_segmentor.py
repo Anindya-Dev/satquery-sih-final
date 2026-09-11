@@ -63,3 +63,22 @@ class UNetSegmentor(nn.Module):
         d1 = self.dec1(torch.cat([self.up1(d2), e1], dim=1))
 
         return self.out(d1)
+
+    @torch.no_grad()
+    def segment(self, x, threshold=0.5):
+        """Run inference and return a boolean mask (sigmoid + threshold).
+
+        Accepts a ``(H, W)``, ``(C, H, W)``, or ``(B, C, H, W)`` float32 input
+        and returns a NumPy boolean mask of matching spatial shape.
+        """
+        self.eval()
+        x = torch.as_tensor(x, dtype=torch.float32)
+        if x.ndim == 2:
+            x = x.unsqueeze(0).unsqueeze(0)  # (H, W) -> (1, 1, H, W)
+        elif x.ndim == 3:
+            x = x.unsqueeze(0)  # (C, H, W) -> (1, C, H, W)
+
+        logits = self.forward(x)
+        probs = torch.sigmoid(logits)
+        mask = probs > threshold
+        return mask.squeeze().cpu().numpy()
