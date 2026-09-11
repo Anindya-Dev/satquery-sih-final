@@ -133,3 +133,107 @@ def get_dataloader(s2_root=None, s1_root=None, mode="fused", batch_size=4, shuff
         num_workers=0,
         pin_memory=True
     )
+
+def get_member3_bitemporal_numpy(s2_root=None, s1_root=None, simulate_flood=True, sar_mode="raw_db"):
+    """
+    Returns an aligned NumPy float32 array formatted specifically for Member 3:
+    Shape: (6, 120, 120)
+    Channels: [NIR, RED, GREEN, BLUE, VV_pre, VV_post]
+    
+    sar_mode:
+        - "raw_db": SAR in physical Decibels [-35.0, 0.0] dB (ideal for physical threshold rules: Δ >= 3.0 dB)
+        - "normalized": SAR scaled to [0.0, 1.0] (ideal for neural networks / U-Net)
+    """
+    loader = get_dataloader(s2_root=s2_root, s1_root=s1_root, mode="fused", batch_size=2)
+    iterator = iter(loader)
+    
+    batch_1 = next(iterator)
+    tensor_pre = batch_1["image"][0]  # (14, 120, 120)
+
+    # BigEarthNet indices: NIR=B08 (idx 7), RED=B04 (idx 3), GREEN=B03 (idx 2), BLUE=B02 (idx 1)
+    nir   = tensor_pre[7:8]
+    red   = tensor_pre[3:4]
+    green = tensor_pre[2:3]
+    blue  = tensor_pre[1:2]
+    
+    # Internal tensor is normalized [0, 1] from [-35, 0] dB
+    vv_norm = tensor_pre[12:13]
+    # Reconstruct dB scale
+    vv_raw_db = (vv_norm * 35.0) - 35.0
+
+    if sar_mode == "raw_db":
+        # Ensure baseline is safely above floor so a drop doesn't collapse against -35 dB
+        vv_pre = torch.clamp(vv_raw_db, -25.0, -5.0)
+        if simulate_flood:
+            vv_post = vv_pre.clone()
+            # Specular water reflection drops backscatter by 6.0 dB in the flood zone
+            vv_post[:, 40:80, 40:80] = vv_post[:, 40:80, 40:80] - 6.0
+        else:
+            if batch_1["image"].shape[0] > 1:
+                raw_second = (batch_1["image"][1][12:13] * 35.0) - 35.0
+                vv_post = torch.clamp(raw_second, -35.0, 0.0)
+            else:
+                vv_post = vv_pre.clone()
+    else:  # "normalized" [0, 1]
+        vv_pre = vv_norm.clone()
+        if simulate_flood:
+            vv_post = vv_pre.clone()
+            # 6 dB drop in a 35 dB range is 6/35 ≈ 0.171
+            vv_post[:, 40:80, 40:80] = torch.clamp(vv_post[:, 40:80, 40:80] - (6.0 / 35.0), 0.0, 1.0)
+        else:
+            vv_post = batch_1["image"][1][12:13] if batch_1["image"].shape[0] > 1 else vv_pre.clone()
+
+    bitemporal_tensor = torch.cat([nir, red, green, blue, vv_pre, vv_post], dim=0)
+    return bitemporal_tensor.cpu().numpy().astype(np.float32)
+
+def get_member3_optical_sar_pair(s2_root=None, s1_root=None, sar_mode="raw_db"):
+    """
+    Returns a single co-registered Optical + SAR pair formatted for Member 3's fusion specialist:
+    Shape: (5, 120, 120)
+    Channels: [NIR, RED, GREEN, BLUE, VV]
+    """
+    # Slice the first 5 channels [NIR, RED, GREEN, BLUE, VV_pre] from the bitemporal array
+    bitemp = get_member3_bitemporal_numpy(
+        s2_root=s2_root,
+        s1_root=s1_root,
+        simulate_flood=False,
+        sar_mode=sar_mode
+    )
+    return bitemp[:5].copy()
+
+def load_from_task_spec(task_spec, s2_root=None, s1_root=None, simulate_flood=True, sar_mode="raw_db"):
+    """
+    Router adapter: maps Member 2's TaskSpec object directly into 
+    the aligned tensors/arrays expected by Member 3.
+    """
+    modality = getattr(task_spec, "modality", "CROSS_MODAL_PAIR")
+    if hasattr(modality, "value"):  # Handle Enum if Member 2 used Enum
+        modality = modality.value
+    modality = str(modality).upper()
+
+    # Case 1: Bi-temporal flood detection -> Member 3's bitemporal numpy array
+    if modality == "BITEMPORAL_PAIR":
+        return get_member3_bitemporal_numpy(
+            s2_root=s2_root,
+            s1_root=s1_root,
+            simulate_flood=simulate_flood,
+            sar_mode=sar_mode
+        )
+
+    # Case 2: Standard modalities -> mapped to data loader mode
+    mode_mapping = {
+        "OPTICAL": "optical",
+        "SAR": "sar",
+        "CROSS_MODAL_PAIR": "fused"
+    }
+    target_mode = mode_mapping.get(modality, "fused")
+
+    loader = get_dataloader(s2_root=s2_root, s1_root=s1_root, mode=target_mode, batch_size=1)
+    batch = next(iter(loader))
+    
+    return {
+        "patch_id": batch["patch_id"][0],
+        "image": batch["image"].squeeze(0),  # Shape: (C, 120, 120)
+        "modality": modality,
+        "bands": getattr(getattr(task_spec, "parameters", None), "bands_required", None)
+    }

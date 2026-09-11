@@ -1,7 +1,9 @@
-"""data_engine.loaders package"""
 from .bigearthnet_dataset import (
     BigEarthNetMMDataset,
     get_dataloader,
+    get_member3_bitemporal_numpy,
+    get_member3_optical_sar_pair,
+    load_from_task_spec,
     CHANNEL_MAP,
     S2_BANDS,
     S1_BANDS
@@ -15,6 +17,9 @@ from .band_transforms import (
 __all__ = [
     "BigEarthNetMMDataset",
     "get_dataloader",
+    "get_member3_bitemporal_numpy",
+    "get_member3_optical_sar_pair",
+    "load_from_task_spec",
     "CHANNEL_MAP",
     "S2_BANDS",
     "S1_BANDS",
