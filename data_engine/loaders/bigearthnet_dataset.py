@@ -186,6 +186,43 @@ def get_member3_bitemporal_numpy(s2_root=None, s1_root=None, simulate_flood=True
     bitemporal_tensor = torch.cat([nir, red, green, blue, vv_pre, vv_post], dim=0)
     return bitemporal_tensor.cpu().numpy().astype(np.float32)
 
+def get_member3_bitemporal_optical_numpy(s2_root=None, s1_root=None, simulate_change=True):
+    """
+    Returns an aligned NumPy float32 array for Member 3's bi-temporal change detector:
+    Shape: (4, 120, 120)
+    Channels: [NIR_t1, RED_t1, NIR_t2, RED_t2]
+    Normalized to [0.0, 1.0].
+    """
+    loader = get_dataloader(s2_root=s2_root, s1_root=s1_root, mode="optical", batch_size=2)
+    iterator = iter(loader)
+    batch = next(iterator)
+
+    tensor_t1 = batch["image"][0]  # Shape: (12, 120, 120)
+
+    # Standard BigEarthNet indices: NIR=B08 (idx 7), RED=B04 (idx 3)
+    nir_t1 = tensor_t1[7:8]
+    red_t1 = tensor_t1[3:4]
+
+    if simulate_change:
+        # Physical basis: Vegetation loss/clearing leads to lower NIR and higher/equal Red
+        nir_t2 = nir_t1.clone()
+        red_t2 = red_t1.clone()
+        # Apply simulated vegetation drop in a patch (e.g. 40:80, 40:80)
+        nir_t2[:, 40:80, 40:80] = torch.clamp(nir_t2[:, 40:80, 40:80] * 0.35, 0.0, 1.0)
+        red_t2[:, 40:80, 40:80] = torch.clamp(red_t2[:, 40:80, 40:80] * 1.3, 0.0, 1.0)
+    else:
+        if batch["image"].shape[0] > 1:
+            tensor_t2 = batch["image"][1]
+            nir_t2 = tensor_t2[7:8]
+            red_t2 = tensor_t2[3:4]
+        else:
+            nir_t2 = nir_t1.clone()
+            red_t2 = red_t1.clone()
+
+    # Stack: [NIR_t1, RED_t1, NIR_t2, RED_t2] -> Shape: (4, 120, 120)
+    bitemp_opt = torch.cat([nir_t1, red_t1, nir_t2, red_t2], dim=0)
+    return bitemp_opt.cpu().numpy().astype(np.float32)
+
 def get_member3_optical_sar_pair(s2_root=None, s1_root=None, sar_mode="raw_db"):
     """
     Returns a single co-registered Optical + SAR pair formatted for Member 3's fusion specialist:
@@ -203,15 +240,24 @@ def get_member3_optical_sar_pair(s2_root=None, s1_root=None, sar_mode="raw_db"):
 
 def load_from_task_spec(task_spec, s2_root=None, s1_root=None, simulate_flood=True, sar_mode="raw_db"):
     """
-    Router adapter: maps Member 2's TaskSpec object directly into 
-    the aligned tensors/arrays expected by Member 3.
+    Router adapter: maps Member 2's TaskSpec (Pydantic object OR dictionary) 
+    directly into aligned tensors/arrays for Member 3.
     """
-    modality = getattr(task_spec, "modality", "CROSS_MODAL_PAIR")
-    if hasattr(modality, "value"):  # Handle Enum if Member 2 used Enum
+    # Safe extractor supporting both dict and object/Pydantic
+    if isinstance(task_spec, dict):
+        modality = task_spec.get("modality", "CROSS_MODAL_PAIR")
+        parameters = task_spec.get("parameters", {})
+        bands_required = parameters.get("bands_required") if isinstance(parameters, dict) else getattr(parameters, "bands_required", None)
+    else:
+        modality = getattr(task_spec, "modality", "CROSS_MODAL_PAIR")
+        parameters = getattr(task_spec, "parameters", None)
+        bands_required = getattr(parameters, "bands_required", None)
+
+    if hasattr(modality, "value"):
         modality = modality.value
     modality = str(modality).upper()
 
-    # Case 1: Bi-temporal flood detection -> Member 3's bitemporal numpy array
+    # Bi-temporal SAR flood detection
     if modality == "BITEMPORAL_PAIR":
         return get_member3_bitemporal_numpy(
             s2_root=s2_root,
@@ -220,7 +266,7 @@ def load_from_task_spec(task_spec, s2_root=None, s1_root=None, simulate_flood=Tr
             sar_mode=sar_mode
         )
 
-    # Case 2: Standard modalities -> mapped to data loader mode
+    # Standard modalities
     mode_mapping = {
         "OPTICAL": "optical",
         "SAR": "sar",
@@ -230,10 +276,10 @@ def load_from_task_spec(task_spec, s2_root=None, s1_root=None, simulate_flood=Tr
 
     loader = get_dataloader(s2_root=s2_root, s1_root=s1_root, mode=target_mode, batch_size=1)
     batch = next(iter(loader))
-    
+
     return {
         "patch_id": batch["patch_id"][0],
-        "image": batch["image"].squeeze(0),  # Shape: (C, 120, 120)
+        "image": batch["image"].squeeze(0),
         "modality": modality,
-        "bands": getattr(getattr(task_spec, "parameters", None), "bands_required", None)
+        "bands": bands_required
     }

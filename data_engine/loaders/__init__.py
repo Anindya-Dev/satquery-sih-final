@@ -3,6 +3,7 @@ from .bigearthnet_dataset import (
     get_dataloader,
     get_member3_bitemporal_numpy,
     get_member3_optical_sar_pair,
+    get_member3_bitemporal_optical_numpy,
     load_from_task_spec,
     CHANNEL_MAP,
     S2_BANDS,
